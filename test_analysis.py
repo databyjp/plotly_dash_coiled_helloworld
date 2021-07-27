@@ -16,13 +16,49 @@ desired_width = 320
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', desired_width)
 
+day_labels = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+
 df = pd.read_csv("data/yellow_tripdata_2019-01.csv")
-df = df[df["passenger_count"] > 0]
+df = df[df["trip_distance"] > 0]
+df = df[(df["fare_amount"] > 0) & (df["fare_amount"] < 10000)]
+ignore_IDs = [264, 265]
+df = df[-(df["PULocationID"].isin(ignore_IDs) | df["DOLocationID"].isin(ignore_IDs))]
+
+df = df.assign(hour=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.hour))
+df = df.assign(wkend=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.weekday() >= 5))
+
+
+
+
+
+df = df.assign(hour=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.hour))
+df = df.assign(wkend=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.weekday() >= 5))
+
+df = df.assign(day=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.date().weekday()))
+df["day"] = df["day"].apply(lambda x: day_labels[x])
+df = df.assign(wkend=False)
+df.loc[df["day"].isin(['Sat', 'Sun']), "wkend"] = True
+
+
+
+# todo - predict fare based on distance, time & wkend
+grp_df = df.groupby(["wkend", "hour"]).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count'})
+grp_df.reset_index(inplace=True)
+scatter_fig = px.scatter(grp_df, x="trip_distance", y="fare_amount", size="VendorID", color="hour",
+                         color_continuous_scale=px.colors.cyclical.IceFire, facet_col="wkend")
+scatter_fig.show()
+
+
+
+grp_df = df.groupby(["wkend", "PULocationID"]).agg({'tip_amount': 'median', 'fare_amount': 'median', 'trip_distance': 'median', 'passenger_count': 'mean', 'VendorID': 'count'})
+
+acc_locs = grp_df[(grp_df["VendorID"] > 10000) & (grp_df["VendorID"] > 10000)]
 
 hist_fig = px.histogram(df, x="passenger_count")
 hist_fig.show()
 
-df = df.assign(day=pd.to_datetime(df["tpep_pickup_datetime"]).apply(lambda x: x.date().weekday()))
+
+df.corr()
 
 day_df = df.groupby("day").agg({'tip_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count'})
 day_df = day_df.assign(tip_per_dist=day_df["tip_amount"]/day_df["trip_distance"])
@@ -30,7 +66,8 @@ day_df = day_df.rename({'VendorID': 'count'}, axis=1)
 day_df.reset_index(inplace=True)
 day_df = day_df.assign(wkend=False)
 day_df.loc[day_df["day"].isin([5, 6]), "wkend"] = True
-
+day_df = day_df.assign(wkend=False)
+day_df.loc[day_df["day"].isin(['Sat', 'Sun']), "wkend"] = True
 bar_fig_a = px.bar(day_df, x="day", y="trip_distance", color="wkend",
                          hover_data=["day"])
 bar_fig_a.show()
@@ -43,3 +80,51 @@ scatter_fig = px.scatter(day_df, x="tip_per_dist", y="passenger_count", color="w
 scatter_fig.show()
 
 day_df.to_csv('data/yellow_tripdata_2019-01_day_grp.csv')
+
+pickup_df = df.groupby("PULocationID").agg({'tip_amount': 'mean', 'total_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count'})
+pickup_df = pickup_df.assign(tip_per_dist=pickup_df["tip_amount"]/pickup_df["trip_distance"])
+pickup_df = pickup_df.assign(tip_per_fare=pickup_df["tip_amount"]/pickup_df["total_amount"])
+pickup_df = pickup_df.rename({'VendorID': 'count'}, axis=1)
+pickup_df = pickup_df[pickup_df["count"] > 10000]
+pickup_df.reset_index(inplace=True)
+
+from sklearn.cluster import AgglomerativeClustering
+clusters = AgglomerativeClustering(n_clusters=8).fit(pickup_df[["trip_distance", "tip_per_fare"]])
+pickup_df = pickup_df.assign(clust=clusters.labels_)
+
+scatter_fig = px.scatter(pickup_df, x="trip_distance", y="tip_per_fare", size="count", hover_data=["PULocationID"], color="clust")
+scatter_fig.show()
+
+hour_df = df.groupby("hour").agg({'tip_amount': 'mean', 'total_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count'})
+hour_df = hour_df.assign(tip_per_dist=hour_df["tip_amount"]/hour_df["trip_distance"])
+hour_df = hour_df.assign(tip_per_fare=hour_df["tip_amount"]/hour_df["total_amount"])
+hour_df = hour_df.rename({'VendorID': 'count'}, axis=1)
+hour_df = hour_df[hour_df["count"] > 10000]
+hour_df.reset_index(inplace=True)
+
+scatter_fig = px.scatter(hour_df, x="trip_distance", y="tip_per_fare", size="count", color="hour",
+                         color_continuous_scale=px.colors.cyclical.IceFire, facet_col="wkend")
+scatter_fig.show()
+
+bar_fig = px.bar(hour_df, x="hour", y="trip_distance", color="tip_per_fare",
+                 facet_col="wkend", color_continuous_scale=px.colors.sequential.YlOrRd)
+bar_fig.show()
+
+
+
+hour_df = df.groupby(["wkend", "PULocationID"]).agg({'tip_amount': 'median', 'fare_amount': 'median', 'trip_distance': 'median', 'passenger_count': 'mean', 'VendorID': 'count'})
+hour_df.reset_index(inplace=True)
+hour_df = hour_df.assign(wkend_hr=hour_df["wkend"].astype(str) + hour_df["PULocationID"].astype(str))
+hour_df = hour_df.rename({'VendorID': 'count'}, axis=1)
+hour_df = hour_df[hour_df["count"] > 1000]
+
+
+clusters = AgglomerativeClustering(n_clusters=6).fit(hour_df[["trip_distance", "passenger_count"]])
+hour_df = hour_df.assign(clust=clusters.labels_)
+scatter_fig = px.scatter(hour_df, x="trip_distance", y="passenger_count", size="count",
+                         hover_data=["wkend_hr"], color="wkend", facet_col="clust", facet_col_wrap=2, color_continuous_scale=px.colors.cyclical.IceFire)
+scatter_fig.show()
+
+
+
+
