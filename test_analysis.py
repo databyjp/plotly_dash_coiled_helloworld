@@ -3,6 +3,9 @@
 import logging
 import pandas as pd
 import plotly.express as px
+import datashader as ds
+import datashader.transfer_functions as tf
+from colorcet import fire
 
 logger = logging.getLogger(__name__)
 root_logger = logging.getLogger()
@@ -16,9 +19,44 @@ desired_width = 320
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', desired_width)
 
+df = pd.read_csv("data/yellow_tripdata_2016-01.csv")
+
+# Preprocessing to filter out likely problematic / unrepresentative data
+df = df[df["trip_distance"] > 0]
+df = df[(df["fare_amount"] > 0) & (df["fare_amount"] < 10000)]
+df = df[(df["pickup_longitude"] > -74.15) & (df["pickup_longitude"] < -73.7004) &
+      (df["pickup_latitude"] > 40.5774) & (df["pickup_latitude"] < 40.9176)]
+
+# Add new columns
+df = df.assign(hour=pd.to_datetime(df["tpep_pickup_datetime"]).dt.hour)
+df = df.assign(day=pd.to_datetime(df["tpep_pickup_datetime"]).dt.weekday)
+df = df.assign(wkend=df["day"] >= 5)
+df = df.assign(triptime=pd.to_datetime(df["tpep_dropoff_datetime"])-pd.to_datetime(df["tpep_pickup_datetime"]))
+df = df.assign(avg_spd=df["trip_distance"] / df.triptime.dt.seconds * 3600)
+
+df = df[df["avg_spd"] <= 100]  # NY taxis are fast but not *that* fast
+
+cvs = ds.Canvas(plot_width=800, plot_height=600)
+agg = cvs.points(df, agg=ds.mean("trip_distance"), x="pickup_longitude", y="pickup_latitude")
+
+img_out = tf.shade(agg, cmap=fire)[::-1].to_pil()
+fig = px.imshow(img_out)
+fig.show()
+
+
+cvs = ds.Canvas(plot_width=800, plot_height=600)
+agg = cvs.points(df[(df["hour"] >= 7) & (df["hour"] < 10) & (df["wkend"] == False)], agg=ds.mean("trip_distance"), x="pickup_longitude", y="pickup_latitude")
+
+img_out = tf.shade(agg, cmap=fire)[::-1].to_pil()
+fig = px.imshow(img_out)
+fig.show()
+
+
+
+
+
 day_labels = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
 
-df = pd.read_csv("data/yellow_tripdata_2019-01.csv")
 df = df[df["trip_distance"] > 0]
 df = df[(df["fare_amount"] > 0) & (df["fare_amount"] < 10000)]
 ignore_IDs = [264, 265]
