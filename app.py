@@ -53,8 +53,8 @@ df = df[df["avg_spd"] <= 100]  # NY taxis are fast but not *that* fast
 avg_fare_per_dist = df["fare_amount"].mean() / df["trip_distance"].mean()
 
 
-def grp_df(df_in):
-    hour_df = df_in.groupby(["weekday", "hour"]).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'})
+def grp_df(df_in, grpby_vars=["hour"]):
+    hour_df = df_in.groupby(grpby_vars).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'})
     hour_df.reset_index(inplace=True)
     hour_df = hour_df.assign(fare_per_dist=hour_df["fare_amount"]/hour_df["trip_distance"]-avg_fare_per_dist)
     hour_df = hour_df.assign(tip_per_fare=hour_df["tip_amount"]/hour_df["fare_amount"])
@@ -104,7 +104,7 @@ body = html.Div(
                         html.H6([html.I(className="fas fa-calendar-alt text-dark py-1 px-2 mr-2"), "SHOW: Weekday/weekend split".upper()], className="mt-4"),
                         dbc.Checklist(
                             id='wkend-split',
-                            options=[{'label': 'Yes', 'value': 'split'}],
+                            options=[{'label': 'Yes', 'value': 'yes'}],
                             value=['yes'],
                             switch=True,
                         ),
@@ -168,15 +168,17 @@ def build_figs(selected_boroughs, dist_range, var_x, var_y, wkend_split):
 
     if "yes" in wkend_split:
         split_var = "weekday"
+        grpby_vars = ["weekday", "hour"]
     else:
         split_var = None
+        grpby_vars = ["hour"]
 
     # Filter DataFrame from inputs
     filt_locs = taxi_zones[taxi_zones["Borough"].isin(selected_boroughs)]["LocationID"].values
     filt_df = df[(df["PULocationID"].isin(filt_locs)) & (df["trip_distance"] >= dist_range[0]) & (df["trip_distance"] <= dist_range[1])]
 
     # Build graphs
-    hour_df = grp_df(filt_df)  # Group data by hour
+    hour_df = grp_df(filt_df, grpby_vars)  # Group data by hour
     bar_fig = px.bar(hour_df, x="hour", y="count", barmode="stack", color=split_var,
                      labels={"count": "Pickups", "hour": "Hour", "weekday": "Time of week"},
                      height=250, template="plotly_white")
