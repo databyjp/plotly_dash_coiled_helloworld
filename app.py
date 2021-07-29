@@ -9,7 +9,8 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output
 import plotly.express as px
 
-day_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+var_x_dict = {"trip_distance": "Trip distance", "avg_spd": "Average speed"}
+var_y_dict = {"fare_amount": "Fare amount", "tip_per_fare": "Tip %", "passenger_count": "Passengers"}
 
 # DBC themes: https://dash-bootstrap-components.opensource.faculty.ai/docs/themes/
 app = dash.Dash(__name__, external_stylesheets=[
@@ -50,43 +51,34 @@ df = df[df["avg_spd"] <= 100]  # NY taxis are fast but not *that* fast
 
 # Group data by desired parameters
 avg_fare_per_dist = df["fare_amount"].mean() / df["trip_distance"].mean()
-hour_df = df.groupby(["weekday", "hour"]).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'})
-hour_df.reset_index(inplace=True)
-hour_df = hour_df.assign(fare_per_dist=hour_df["fare_amount"]/hour_df["trip_distance"]-avg_fare_per_dist)
-hour_df = hour_df.assign(tip_per_fare=hour_df["tip_amount"]/hour_df["fare_amount"])
-hour_df = hour_df.assign(tip_per_dist=hour_df["tip_amount"]/hour_df["trip_distance"])
-hour_df = hour_df.rename({'VendorID': 'count'}, axis=1)
 
-# Build default graphs
-bar_fig = px.bar(hour_df, x="hour", y="count", barmode="stack", color="weekday",
-                 labels={"count": "Pickups", "hour": "Hour", "weekday": "Time of week"},
-                 height=250, template="plotly_white")
-bar_fig.update_layout(margin=dict(l=5, r=5, t=10, b=5))
 
-scatter_fig = px.scatter(hour_df, x="trip_distance", y="fare_amount", size="count", color="hour", facet_col="weekday",
-                         labels={"trip_distance": "Trip Distance", "fare_amount": "Fare", "weekday": "Time of week"},
-                         color_continuous_scale=px.colors.cyclical.IceFire, height=300, template="plotly_white")
-scatter_fig.update_layout(margin=dict(l=5, r=5, t=50, b=5))
+def grp_df(df_in):
+    hour_df = df_in.groupby(["weekday", "hour"]).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'})
+    hour_df.reset_index(inplace=True)
+    hour_df = hour_df.assign(fare_per_dist=hour_df["fare_amount"]/hour_df["trip_distance"]-avg_fare_per_dist)
+    hour_df = hour_df.assign(tip_per_fare=hour_df["tip_amount"]/hour_df["fare_amount"])
+    hour_df = hour_df.assign(tip_per_dist=hour_df["tip_amount"]/hour_df["trip_distance"])
+    hour_df = hour_df.rename({'VendorID': 'count'}, axis=1)
+    return hour_df
+
 
 # DASH LAYOUT
 header = html.Div(
     dbc.Container([
-        html.Header(html.H5("Starter App Template | Plotly Dash + Coiled".upper(), className="fs-4"), className="d-flex flex-wrap justify-content-center mb-3 mt-3 pb-3 border-bottom")
+        html.Header(html.H5("Plotly Dash + Coiled | Starter App".upper(), className="fs-4"), className="d-flex flex-wrap justify-content-center mb-1 mt-3 pb-1 border-bottom")
     ])
 )
 
 body = html.Div(
     dbc.Container([
-        html.H3("NYC Taxi Data Analysis".upper(), className="display-5 fw-bold"),
-        html.Div(
+        html.H4("NYC Taxi Data Dashboard".upper(), className="display-5 fw-bold mt-2"),
+        html.Div([
             html.P([
-                "This dashboard combines ",
-                html.A("Plotly Dash", href="/"),
-                " with ",
-                html.A("Coiled.io", href="/"),
+                "This dashboard leverages ", html.A("Plotly Dash", href="https://plotly.com/"), " with ", html.A("Coiled.io", href="https://coiled.io/"),
                 " to show how quickly and easily powerful, scalable dashboard and analytics apps can be built with these tools.",
-            ], className="lead mb-2"),
-        ),
+            ], className="lead mb-1"),
+        ]),
         dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -100,73 +92,101 @@ body = html.Div(
                             value=list(boroughs)
                         ),
                         html.H6([html.I(className="fas fa-ruler text-dark py-1 px-1 mr-2"), "FILTER: By trip distance".upper()], className="mt-4"),
-                        dcc.RangeSlider(),
+                        dcc.RangeSlider(
+                            id='dist-slider',
+                            min=0,
+                            max=30,
+                            step=1,
+                            value=[5, 15],
+                            className="mb-0 pb-0",
+                        ),
+                        html.Div(html.Small(id='dist-slider-legend', className="mt-0 pt-0"), className="mt-0 pt-0"),
                         html.H6([html.I(className="fas fa-calendar-alt text-dark py-1 px-2 mr-2"), "SHOW: Weekday/weekend split".upper()], className="mt-4"),
                         dbc.Checklist(
-                            id='weekday-select',
+                            id='wkend-split',
                             options=[{'label': 'Yes', 'value': 'split'}],
-                            value=['split'],
+                            value=['yes'],
                             switch=True,
                         ),
+                        html.P([
+                            dbc.Badge(f"{len(df)}", color="info", id="n-row-selects"), " rows selected from ", dbc.Badge(f"{len(df)}", color="secondary"), " total data rows."
+                        ], className="mt-4"),
                     ])
                 ], className='bg-light p-3')
             ], sm=12, md=4, className="mr-3"),
             dbc.Col([
                 html.H4("Outputs", className="display-5 fw-bold lh-1 mb-3 pb-2 border-bottom"),
-                html.H5([html.I(className="fas fa-clock bg-primary text-white py-1 px-1 mr-2"), "Analyse taxi pickups by hour".upper()], className="mt-2"),
-                dcc.Graph(figure=bar_fig, id="bar-fig-a"),
+                html.H5([html.I(className="fas fa-clock bg-primary text-white py-1 px-1 mr-2"), "Pickups by time of the day".upper()], className="mt-2"),
+                dcc.Graph(figure=px.bar(), id="bar-fig"),
                 html.H5([html.I(className="fas fa-chart-line bg-primary text-white py-1 px-1 mr-2"), "Explore correlations".upper()], className="mt-3"),
                 dbc.Row([
                     dbc.Col([
                         dcc.Dropdown(
-                            id='var-a',
-                            options=[
-                                {"label": "Fare amount", "value": "fare_amount"},
-                                {"label": "Tip %", "value": "tip_per_fare"},
-                                {"label": "Passengers", "value": "passenger_count"}
-                            ],
-                            value="fare_amount"
+                            id='var-x',
+                            options=[{"label": v, "value": k} for k, v in var_x_dict.items()],
+                            value="trip_distance"
                         ),
                     ], className="sm-6"),
                     dbc.Col([
                         dcc.Dropdown(
-                            id='var-b',
-                            options=[
-                                {"label": "Trip distance", "value": "trip_distance"},
-                                {"label": "Average speed", "value": "avg_spd"},
-                            ],
-                            value="trip_distance"
+                            id='var-y',
+                            options=[{"label": v, "value": k} for k, v in var_y_dict.items()],
+                            value="fare_amount"
                         ),
-                    ], className="sm-6")
+                    ], className="sm-6"),
                 ]),
-                dcc.Graph(figure=scatter_fig, id="bar-fig-b")
+                dcc.Graph(figure=px.scatter(), id="scatter-fig")
             ], sm=12, md=7, className="p-3"),
         ], className="g-5 py-5 mt-2"),
-        html.Div(
-            html.P([
-                "Dataset from ",
-                html.A("TLC Trip Record Data", href="https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page"),
-                "."
-            ]),
-        ),
+        html.Div([
+            html.A([html.Img(src="assets/logo-plotly.svg", className="mr-2", height="30px")], href="https://plotly.com/"),
+            html.A([html.Img(src="assets/logo-coiled.svg", className="mr-2", height="50px")], href="https://coiled.io/"),
+            html.P(html.Small(["Dataset from ", html.A("TLC Trip Record Data", href="https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page"), "."])),
+        ]),
     ])
 )
 
 app.layout = html.Div([header, body])
 
 @app.callback(
-    [Output("bar-fig-a", "figure"),
-     Output("bar-fig-b", "figure")],
-    [Input("hour-slider", "value")],
+    [Output("bar-fig", "figure"),
+     Output("scatter-fig", "figure"),
+     Output("dist-slider-legend", "children"),
+     Output("n-row-selects", "children")],
+    [Input("borough-select", "value"),
+     Input("dist-slider", "value"),
+     Input("var-x", "value"),
+     Input("var-y", "value"),
+     Input("wkend-split", "value")],
 )
-def update_bar_fig_a(slider_values):
+def build_figs(selected_boroughs, dist_range, var_x, var_y, wkend_split):
+    if dist_range[1] == 30:
+        dist_range = [dist_range[0], df["trip_distance"].max()]
+        disp_range = [dist_range[0], "30+"]
+    else:
+        disp_range = dist_range
 
+    if "yes" in wkend_split:
+        split_var = "weekday"
+    else:
+        split_var = None
 
-    # bar_fig_a = px.bar(tmp_df, x="day", y="trip_distance", color="dataset", barmode="group",
-    #                    hover_data=["day"], category_orders={'day': day_order}, height=300)
-    # bar_fig_b = px.bar(tmp_df, x="day", y="passenger_count", color="wkend",
-    #                    hover_data=["day"], category_orders={'day': day_order}, height=300)
-    return dash.no_update, dash.no_update
+    # Filter DataFrame from inputs
+    filt_locs = taxi_zones[taxi_zones["Borough"].isin(selected_boroughs)]["LocationID"].values
+    filt_df = df[(df["PULocationID"].isin(filt_locs)) & (df["trip_distance"] >= dist_range[0]) & (df["trip_distance"] <= dist_range[1])]
+
+    # Build graphs
+    hour_df = grp_df(filt_df)  # Group data by hour
+    bar_fig = px.bar(hour_df, x="hour", y="count", barmode="stack", color=split_var,
+                     labels={"count": "Pickups", "hour": "Hour", "weekday": "Time of week"},
+                     height=250, template="plotly_white")
+    bar_fig.update_layout(margin=dict(l=5, r=5, t=10, b=5))
+
+    scatter_fig = px.scatter(hour_df, x=var_x, y=var_y, size="count", color="hour", facet_col=split_var,
+                             labels={"weekday": "Time of week", **var_x_dict, **var_y_dict},
+                             color_continuous_scale=px.colors.cyclical.IceFire, height=300, template="plotly_white")
+    scatter_fig.update_layout(margin=dict(l=5, r=5, t=50, b=5))
+    return bar_fig, scatter_fig, f"Showing trips between {disp_range[0]}-{disp_range[1]} miles", str(len(filt_df))
 
 
 if __name__ == '__main__':
