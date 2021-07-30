@@ -64,34 +64,36 @@ def grp_df(df_in, grpby_vars=["hour"]):
 
 
 # DASH LAYOUT
-header = html.Div(
+header = html.Div([
     dbc.Container([
-        html.Header(html.H5("Plotly Dash + Coiled | Starter App".upper(), className="fs-4"), className="d-flex flex-wrap justify-content-center mb-1 mt-3 pb-1 border-bottom")
-    ])
-)
-
-body = html.Div(
+        html.Header(html.H5("Plotly Dash + Coiled | Starter App".upper(), className="fs-4"), className="d-flex flex-wrap justify-content-center my-1 pb-1 border-bottom")
+    ]),
     dbc.Container([
-        html.H4("NYC Taxi Data Dashboard".upper(), className="display-5 fw-bold mt-2"),
+        html.H4([html.I(className="fas fa-taxi rounded text-warning py-1 px-1 mr-2"), html.Span(["NYC Taxi".upper()], className="text-warning"), " Data Dashboard".upper()], className="display-5 fw-bold mt-3"),
         html.Div([
             html.P([
                 "This dashboard leverages ", html.A("Plotly Dash", href="https://plotly.com/"), " with ", html.A("Coiled.io", href="https://coiled.io/"),
                 " to show how quickly and easily powerful, scalable dashboard and analytics apps can be built with these tools.",
             ], className="lead mb-1"),
         ]),
+    ])
+], className="bg-dark text-light my-0 py-4")
+
+body = html.Div([
+    dbc.Container([
         dbc.Row([
             dbc.Col([
                 dbc.Card([
                     html.H4("Controls", className="display-5 fw-bold lh-1 mb-3 pb-2 border-bottom"),
                     html.Div([
-                        html.H6([html.I(className="fas fa-map-pin icon-square text-dark py-1 px-2 mr-2"), "FILTER: By boroughs".upper()]),
+                        html.H6([html.I(className="fas fa-map-pin rounded text-dark py-1 px-2 mr-2"), "FILTER: By boroughs".upper()]),
                         dcc.Dropdown(
                             id='borough-select',
                             options=[{"label": b, "value": b} for b in boroughs],
                             multi=True,
                             value=list(boroughs)
                         ),
-                        html.H6([html.I(className="fas fa-ruler text-dark py-1 px-1 mr-2"), "FILTER: By trip distance".upper()], className="mt-4"),
+                        html.H6([html.I(className="fas fa-ruler rounded text-dark py-1 px-1 mr-2"), "FILTER: By trip distance".upper()], className="mt-4"),
                         dcc.RangeSlider(
                             id='dist-slider',
                             min=0,
@@ -101,7 +103,7 @@ body = html.Div(
                             className="mb-0 pb-0",
                         ),
                         html.Div(html.Small(id='dist-slider-legend', className="mt-0 pt-0"), className="mt-0 pt-0"),
-                        html.H6([html.I(className="fas fa-calendar-alt text-dark py-1 px-2 mr-2"), "SHOW: Weekday/weekend split".upper()], className="mt-4"),
+                        html.H6([html.I(className="fas fa-calendar-alt rounded text-dark py-1 px-2 mr-2"), "SHOW: Weekday/weekend split".upper()], className="mt-4"),
                         dbc.Checklist(
                             id='wkend-split',
                             options=[{'label': 'Yes', 'value': 'yes'}],
@@ -116,9 +118,9 @@ body = html.Div(
             ], sm=12, md=4, className="mr-3"),
             dbc.Col([
                 html.H4("Outputs", className="display-5 fw-bold lh-1 mb-3 pb-2 border-bottom"),
-                html.H5([html.I(className="fas fa-clock bg-primary text-white py-1 px-1 mr-2"), "Pickups by time of the day".upper()], className="mt-2"),
+                html.H5([html.I(className="fas fa-clock rounded bg-primary text-white py-1 px-1 mr-2"), "Pickups by time of the day".upper()], className="mt-2"),
                 dcc.Graph(figure=px.bar(), id="bar-fig"),
-                html.H5([html.I(className="fas fa-chart-line bg-primary text-white py-1 px-1 mr-2"), "Explore correlations".upper()], className="mt-3"),
+                html.H5([html.I(className="fas fa-chart-line rounded bg-primary text-white py-1 px-1 mr-2"), "Explore correlations".upper()], className="mt-3"),
                 dbc.Row([
                     dbc.Col([
                         dcc.Dropdown(
@@ -144,7 +146,7 @@ body = html.Div(
             html.P(html.Small(["Dataset from ", html.A("TLC Trip Record Data", href="https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page"), "."])),
         ]),
     ])
-)
+])
 
 app.layout = html.Div([header, body])
 
