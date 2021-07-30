@@ -1,5 +1,5 @@
 # Project specific
-data/
+data/*tripdata*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
