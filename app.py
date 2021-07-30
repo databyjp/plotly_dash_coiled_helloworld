@@ -1,5 +1,6 @@
 # ========== (c) JP Hwang 26/7/21  ==========
 
+import logging
 import pandas as pd
 import numpy as np
 import dash
@@ -8,13 +9,21 @@ import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 from dash.dependencies import Input, Output
 import plotly.express as px
+import coiled
+from distributed import Client
+import dask.dataframe as dd
 
-var_x_dict = {"trip_distance": "Trip distance", "avg_spd": "Average speed"}
-var_y_dict = {"fare_amount": "Fare amount", "tip_per_fare": "Tip %", "passenger_count": "Passengers"}
+# Initialise Logger
+logger = logging.getLogger(__name__)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+sh = logging.StreamHandler()
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+sh.setFormatter(formatter)
+root_logger.addHandler(sh)
 
-# DBC themes: https://dash-bootstrap-components.opensource.faculty.ai/docs/themes/
 app = dash.Dash(__name__, external_stylesheets=[
-    dbc.themes.BOOTSTRAP,
+    dbc.themes.BOOTSTRAP,  # DBC themes: https://dash-bootstrap-components.opensource.faculty.ai/docs/themes/
     {
         'href': 'https://use.fontawesome.com/releases/v5.8.1/css/all.css',
         'rel': 'stylesheet',
@@ -25,36 +34,94 @@ app = dash.Dash(__name__, external_stylesheets=[
 
 server = app.server
 
-df = pd.read_csv("data/yellow_tripdata_2019-01.csv")
+# ====================
+# Connect to cluster
+# ====================
+
+# Global initialization - To ensure that different clients are generated
+client = None
+
+
+# ====================
+# IF USING COILED - USE BELOW CODE
+# ====================
+def get_client(client):
+    if client is None or client.status != "running":
+        logger.info("Starting or connecting to Coiled cluster...")
+        cluster = coiled.Cluster(
+            name="taxi-app-clust-1",
+            software="taxi-app-env",
+            n_workers=1,
+            worker_cpu=2,
+            worker_memory="8 GiB",
+            shutdown_on_close=False,
+        )
+        try:
+            client = Client(cluster)
+        except:
+            logger.info("Failed, trying to close the client and connect again...")
+            Client(cluster).close()
+            client = Client(cluster)
+        logger.info(f"Coiled cluster is up! ({client.dashboard_link})")
+
+    return client
+
+
+# Read data
+def load_df():
+    logger.info("Loading data from S3 bucket")
+    df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")
+    df = df[[
+        'VendorID', 'tpep_pickup_datetime', 'tpep_dropoff_datetime', 'passenger_count', 'trip_distance',
+        'PULocationID', 'DOLocationID', 'payment_type', 'fare_amount', 'tip_amount', 'total_amount'
+    ]]  # Only keep some of the data for speed
+
+    # Specify datatype to single precision (32-bit) to save memory & improve performance
+    df["VendorID"] = df["VendorID"].astype(np.int32)
+    df["passenger_count"] = df["passenger_count"].astype(np.int32)
+    df["trip_distance"] = df["trip_distance"].astype(np.float32)
+    df["PULocationID"] = df["PULocationID"].astype(np.int32)
+    df["DOLocationID"] = df["DOLocationID"].astype(np.int32)
+    df["payment_type"] = df["payment_type"].astype(np.int32)
+    df["fare_amount"] = df["fare_amount"].astype(np.float32)
+    df["tip_amount"] = df["tip_amount"].astype(np.float32)
+    df["total_amount"] = df["total_amount"].astype(np.float32)
+
+    # Preprocessing to filter out likely problematic / unrepresentative data
+    df = df[df["trip_distance"] > 0]
+    df = df[(df["fare_amount"] > 0) & (df["fare_amount"] < 10000)]
+    ignore_IDs = [264, 265]  # Unknown locations
+    df = df[-(df["PULocationID"].isin(ignore_IDs) | df["DOLocationID"].isin(ignore_IDs))]
+    df = df[df["tpep_pickup_datetime"] < df["tpep_dropoff_datetime"]]
+
+    # Add new columns
+    df = df.assign(hour=dd.to_datetime(df["tpep_pickup_datetime"]).dt.hour)
+    df = df.assign(day=dd.to_datetime(df["tpep_pickup_datetime"]).dt.weekday)
+    df = df.assign(weekday="Weekday")
+    df["weekday"] = df["weekday"].mask(df["day"] >= 5, "Weekend")
+    df = df.assign(triptime=dd.to_datetime(df["tpep_dropoff_datetime"]) - dd.to_datetime(df["tpep_pickup_datetime"]))
+    df = df.assign(avg_spd=df["trip_distance"] / df.triptime.dt.seconds * 3600)
+    df = df[df["avg_spd"] <= 100]  # NY taxis are fast but not *that* fast
+
+    logger.info("Data loaded")
+    return df
+
+
+client = get_client(client)
+df = load_df()
+df = df.persist()
+
 taxi_zones = pd.read_csv("data/taxi+_zone_lookup.csv")
-
-# Preprocessing to filter out likely problematic / unrepresentative data
-df = df[df["trip_distance"] > 0]
-df = df[(df["fare_amount"] > 0) & (df["fare_amount"] < 10000)]
-ignore_IDs = [264, 265]  # Unknown locations
-df = df[-(df["PULocationID"].isin(ignore_IDs) | df["DOLocationID"].isin(ignore_IDs))]
-df = df[df["tpep_pickup_datetime"] < df["tpep_dropoff_datetime"]]
-
 boroughs = np.sort(taxi_zones["Borough"].unique())
 
-# Add new columns
-df = df.assign(hour=pd.to_datetime(df["tpep_pickup_datetime"]).dt.hour)
-df = df.assign(day=pd.to_datetime(df["tpep_pickup_datetime"]).dt.weekday)
-
-df = df.assign(weekday="Weekday")
-df.loc[df["day"] >= 5, "weekday"] = "Weekend"
-
-df = df.assign(triptime=pd.to_datetime(df["tpep_dropoff_datetime"])-pd.to_datetime(df["tpep_pickup_datetime"]))
-df = df.assign(avg_spd=df["trip_distance"] / df.triptime.dt.seconds * 3600)
-
-df = df[df["avg_spd"] <= 100]  # NY taxis are fast but not *that* fast
-
 # Group data by desired parameters
-avg_fare_per_dist = df["fare_amount"].mean() / df["trip_distance"].mean()
+avg_fare_per_dist = df["fare_amount"].mean().compute() / df["trip_distance"].mean().compute()
+var_x_dict = {"trip_distance": "Trip distance", "avg_spd": "Average speed"}
+var_y_dict = {"fare_amount": "Fare amount", "tip_per_fare": "Tip %", "passenger_count": "Passengers"}
 
 
 def grp_df(df_in, grpby_vars=["hour"]):
-    hour_df = df_in.groupby(grpby_vars).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'})
+    hour_df = df_in.groupby(grpby_vars).agg({'tip_amount': 'mean', 'fare_amount': 'mean', 'trip_distance': 'mean', 'passenger_count': 'mean', 'VendorID': 'count', 'avg_spd': 'mean'}).compute()
     hour_df.reset_index(inplace=True)
     hour_df = hour_df.assign(fare_per_dist=hour_df["fare_amount"]/hour_df["trip_distance"]-avg_fare_per_dist)
     hour_df = hour_df.assign(tip_per_fare=hour_df["tip_amount"]/hour_df["fare_amount"])
