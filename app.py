@@ -9,7 +9,6 @@ import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 from dash.dependencies import Input, Output
 import plotly.express as px
-import coiled
 from distributed import Client
 import dask.dataframe as dd
 
@@ -42,35 +41,60 @@ server = app.server
 client = None
 
 
-# ====================
-# IF USING COILED - USE BELOW CODE
-# ====================
-def get_client(client):
-    if client is None or client.status != "running":
-        logger.info("Starting or connecting to Coiled cluster...")
-        cluster = coiled.Cluster(
-            name="taxi-app-clust-1",
-            software="taxi-app-env",
-            n_workers=1,
-            worker_cpu=2,
-            worker_memory="8 GiB",
-            shutdown_on_close=False,
-        )
-        try:
-            client = Client(cluster)
-        except:
-            logger.info("Failed, trying to close the client and connect again...")
-            Client(cluster).close()
-            client = Client(cluster)
-        logger.info(f"Coiled cluster is up! ({client.dashboard_link})")
+# # ====================
+# # IF USING COILED - USE BELOW CODE
+# # ====================
+# import coiled
+# def get_client(client):
+#     if client is None or client.status != "running":
+#         logger.info("Starting or connecting to Coiled cluster...")
+#         cluster = coiled.Cluster(
+#             name="taxi-app-clust-1",
+#             software="taxi-app-env",
+#             n_workers=1,
+#             worker_cpu=2,
+#             worker_memory="8 GiB",
+#             shutdown_on_close=False,
+#         )
+#         try:
+#             client = Client(cluster)
+#         except:
+#             logger.info("Failed, trying to close the client and connect again...")
+#             Client(cluster).close()
+#             client = Client(cluster)
+#         logger.info(f"Coiled cluster is up! ({client.dashboard_link})")
+#
+#     return client
+# # ====================
+# # END - COILED-SPECIFIC code
+# # ====================
 
-    return client
+
+# ====================
+# FOR LOCAL DASK
+# ====================
+scheduler_url = "127.0.0.1:8786"
+
+
+def get_client():
+    """
+    This function must be called before any of the functions that require a client.
+    """
+    global client
+    # Init client
+    logger.info(f"Connecting to cluster at {scheduler_url} ... ")
+    client = Client(scheduler_url)
+    logger.info("done")
+# ====================
+# END - LOCAL DASK CODE
+# ====================
 
 
 # Read data
 def load_df():
-    logger.info("Loading data from S3 bucket")
-    df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")
+    logger.info("Loading data")
+    # df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")  # If using coiled
+    df = dd.read_csv("data/yellow_tripdata_2019-01.csv")  # If local dask
     df = df[[
         'VendorID', 'tpep_pickup_datetime', 'tpep_dropoff_datetime', 'passenger_count', 'trip_distance',
         'PULocationID', 'DOLocationID', 'payment_type', 'fare_amount', 'tip_amount', 'total_amount'
@@ -107,7 +131,7 @@ def load_df():
     return df
 
 
-client = get_client(client)
+client = get_client()
 df = load_df()
 df = df.persist()
 
@@ -178,7 +202,8 @@ body = html.Div([
                             switch=True,
                         ),
                         html.P([
-                            dbc.Badge(f"{len(df)}", color="info", id="n-row-selects"), " rows selected from ", dbc.Badge(f"{len(df)}", color="secondary"), " total data rows."
+                            dbc.Badge(f"{len(df)}", color="info", id="n-row-selects"), " rows selected out of ",
+                            dbc.Badge(f"{len(df)}", color="secondary"), " total data rows."
                         ], className="mt-4"),
                     ])
                 ], className='bg-light p-3')
@@ -257,7 +282,7 @@ def build_figs(selected_boroughs, dist_range, var_x, var_y, wkend_split):
                              labels={"weekday": "Time of week", **var_x_dict, **var_y_dict},
                              color_continuous_scale=px.colors.cyclical.IceFire, height=300, template="plotly_white")
     scatter_fig.update_layout(margin=dict(l=5, r=5, t=50, b=5))
-    return bar_fig, scatter_fig, f"Showing trips between {disp_range[0]}-{disp_range[1]} miles", str(len(filt_df))
+    return bar_fig, scatter_fig, f"Showing trips between {disp_range[0]}-{disp_range[1]} miles", f"{round(100 * len(filt_df) / len(df), 1)}%"
 
 
 if __name__ == '__main__':
