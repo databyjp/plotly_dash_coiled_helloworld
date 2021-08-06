@@ -5,6 +5,11 @@ Together, these Plotly partners enable organizations to scale popular data scien
 
 This app is designed to show how quickly an easily a Dash app using Dask on a local cluster can be converted to use a remote cluster with Coiled.
 
+## Important Notes
+- The app assumes that the user has a Coiled account, and that **their account credentials have been set up** (e.g. via `coiled login`).
+See Coiled's [getting started guide](https://docs.coiled.io/user_guide/getting_started.html) for help.
+- Just as a local Python environment is needed with the right packages, a remote environment is required at the Coiled cluster - see the getting started guide, or Coiled's guide on [creating software environments](https://docs.coiled.io/user_guide/software_environment_creation.html).
+
 ![Screenshot of Dash+Coiled app](./assets/dash_coiled_screenshot.png?raw=true)
 
 ## Additional documentation:
