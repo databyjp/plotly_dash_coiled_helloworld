@@ -45,17 +45,17 @@ def get_client(client):
     if client is None or client.status != "running":  # Check if a client has been instantiated - if running, no need to do anything
         logger.info("Starting or connecting to Coiled cluster...")
         cluster = coiled.Cluster(
-            name="taxi-app-clust-1",
-            software="taxi-app-env",
-            n_workers=1,
-            worker_cpu=2,
-            worker_memory="8 GiB",
-            shutdown_on_close=False,
+            name="taxi-app-clust-1",  # To re-connect if cluster of same name exists
+            software="taxi-app-env",  # Use existing environment
+            n_workers=1,  # Specify number of Dask workers
+            worker_cpu=2,  # Specify number of cpus per worker
+            worker_memory="8 GiB",  # Specify worker memory
+            shutdown_on_close=False,  # Keep server running for other clients
         )
         try:
             client = Client(cluster)
         except:
-            logger.info("Failed, trying to close the client and connect again...")  # In case of some error
+            logger.info("Failed, trying to close the client and connect again...")  # In case of any errors
             Client(cluster).close()
             client = Client(cluster)
         logger.info(f"Coiled cluster is up! ({client.dashboard_link})")  # Link to a Coiled dashboard
@@ -66,7 +66,7 @@ def get_client(client):
 # Read data
 def load_df():
     logger.info("Loading data from S3 bucket")
-    df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")
+    df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")  # Load data from S3 bucket
     df = df[[
         'VendorID', 'tpep_pickup_datetime', 'tpep_dropoff_datetime', 'passenger_count', 'trip_distance',
         'PULocationID', 'DOLocationID', 'payment_type', 'fare_amount', 'tip_amount', 'total_amount'
