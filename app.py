@@ -11,6 +11,7 @@ from dash.dependencies import Input, Output
 import plotly.express as px
 from distributed import Client
 import dask.dataframe as dd
+import coiled
 
 # Initialise Logger
 logger = logging.getLogger(__name__)
@@ -33,68 +34,39 @@ app = dash.Dash(__name__, external_stylesheets=[
 
 server = app.server
 
-# ====================
-# Connect to cluster
-# ====================
-
 # Global initialization - To ensure that different clients are generated
 client = None
 
 
-# # ====================
-# # IF USING COILED - USE BELOW CODE
-# # ====================
-# import coiled
-# def get_client(client):
-#     if client is None or client.status != "running":
-#         logger.info("Starting or connecting to Coiled cluster...")
-#         cluster = coiled.Cluster(
-#             name="taxi-app-clust-1",
-#             software="taxi-app-env",
-#             n_workers=1,
-#             worker_cpu=2,
-#             worker_memory="8 GiB",
-#             shutdown_on_close=False,
-#         )
-#         try:
-#             client = Client(cluster)
-#         except:
-#             logger.info("Failed, trying to close the client and connect again...")
-#             Client(cluster).close()
-#             client = Client(cluster)
-#         logger.info(f"Coiled cluster is up! ({client.dashboard_link})")
-#
-#     return client
-# # ====================
-# # END - COILED-SPECIFIC code
-# # ====================
-
-
 # ====================
-# FOR LOCAL DASK
+# FOR CONNECTING TO COILED
 # ====================
-scheduler_url = "127.0.0.1:8786"
+def get_client(client):
+    if client is None or client.status != "running":  # Check if a client has been instantiated - if running, no need to do anything
+        logger.info("Starting or connecting to Coiled cluster...")
+        cluster = coiled.Cluster(
+            name="taxi-app-clust-1",
+            software="taxi-app-env",
+            n_workers=1,
+            worker_cpu=2,
+            worker_memory="8 GiB",
+            shutdown_on_close=False,
+        )
+        try:
+            client = Client(cluster)
+        except:
+            logger.info("Failed, trying to close the client and connect again...")  # In case of some error
+            Client(cluster).close()
+            client = Client(cluster)
+        logger.info(f"Coiled cluster is up! ({client.dashboard_link})")  # Link to a Coiled dashboard
 
-
-def get_client():
-    """
-    This function must be called before any of the functions that require a client.
-    """
-    global client
-    # Init client
-    logger.info(f"Connecting to cluster at {scheduler_url} ... ")
-    client = Client(scheduler_url)
-    logger.info("done")
-# ====================
-# END - LOCAL DASK CODE
-# ====================
+    return client
 
 
 # Read data
 def load_df():
-    logger.info("Loading data")
-    # df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")  # If using coiled
-    df = dd.read_csv("data/yellow_tripdata_2019-01.csv")  # If local dask
+    logger.info("Loading data from S3 bucket")
+    df = dd.read_csv("s3://nyc-tlc/trip data/yellow_tripdata_2019-01.csv")
     df = df[[
         'VendorID', 'tpep_pickup_datetime', 'tpep_dropoff_datetime', 'passenger_count', 'trip_distance',
         'PULocationID', 'DOLocationID', 'payment_type', 'fare_amount', 'tip_amount', 'total_amount'
@@ -241,6 +213,7 @@ body = html.Div([
 ])
 
 app.layout = html.Div([header, body])
+
 
 @app.callback(
     [Output("bar-fig", "figure"),
