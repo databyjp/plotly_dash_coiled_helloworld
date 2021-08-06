@@ -103,7 +103,7 @@ def load_df():
     return df
 
 
-client = get_client()
+client = get_client(client)
 df = load_df()
 df = df.persist()
 
